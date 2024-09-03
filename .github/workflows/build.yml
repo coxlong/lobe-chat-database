@@ -1,8 +1,6 @@
 name: Publish LobeChat Database Docker Image
 
 on:
-  schedule:
-    - cron: '0 * * * *'
   workflow_dispatch:
 
 env:
@@ -28,14 +26,28 @@ jobs:
         id: package_version
         run: echo "VERSION=$(node -p "require('./lobe-chat/package.json').version")" >> $GITHUB_OUTPUT
 
+      - name: Check if version already exists
+        id: check_version
+        run: |
+          if docker manifest inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.package_version.outputs.VERSION }} > /dev/null 2>&1; then
+            echo "Version already exists"
+            echo "EXISTS=true" >> $GITHUB_OUTPUT
+          else
+            echo "Version does not exist"
+            echo "EXISTS=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Set up QEMU
+        if: steps.check_version.outputs.EXISTS == 'false'
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
+        if: steps.check_version.outputs.EXISTS == 'false'
         id: buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Login to GitHub Container Registry
+        if: steps.check_version.outputs.EXISTS == 'false'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -43,6 +55,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata for Docker
+        if: steps.check_version.outputs.EXISTS == 'false'
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -53,10 +66,12 @@ jobs:
             type=sha,format=long
 
       - name: Create .env.production.local
+        if: steps.check_version.outputs.EXISTS == 'false'
         run: |
           echo "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_Y2xlcmsuZ2Vla2tpdC5uZXQk" > ./lobe-chat/.env.production.local
 
       - name: Build and push
+        if: steps.check_version.outputs.EXISTS == 'false'
         uses: docker/build-push-action@v5
         with:
           context: ./lobe-chat
@@ -68,6 +83,11 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Inspect image
+        if: steps.check_version.outputs.EXISTS == 'false'
         run: |
           docker buildx imagetools inspect \
-          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.package_version.outputs.VERSION }}
+
+      - name: Version already exists
+        if: steps.check_version.outputs.EXISTS == 'true'
+        run: echo "Version ${{ steps.package_version.outputs.VERSION }} already exists. Skipping build and push."
