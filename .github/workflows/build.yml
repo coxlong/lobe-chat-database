@@ -1,4 +1,4 @@
-name: ci
+name: Publish LobeChat Database Docker Image
 
 on:
   workflow_dispatch:
@@ -8,7 +8,8 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  docker:
+  push_to_registry:
+    name: Push Docker image to GitHub Container Registry
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -20,6 +21,10 @@ jobs:
         with:
           repository: 'lobehub/lobe-chat'
           path: 'lobe-chat'
+
+      - name: Get version from package.json
+        id: package_version
+        run: echo "VERSION=$(node -p "require('./lobe-chat/package.json').version")" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -37,9 +42,13 @@ jobs:
 
       - name: Extract metadata for Docker
         id: meta
-        uses: docker/metadata-action@v3
+        uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ steps.package_version.outputs.VERSION }}
+            type=sha,format=long
 
       - name: Build and push
         uses: docker/build-push-action@v5
